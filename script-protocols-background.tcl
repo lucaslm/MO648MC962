@@ -47,7 +47,7 @@ set ns		[new Simulator]
 set tracefd     [open $param(dir)/simple.tr w]
 $ns trace-all $tracefd
 
-set tfg_trace_file [open $param(dir)/tfg.tr w]
+set tfg_trace_file $param(dir)/tfg.tr
 
 # Geracao de numeros aleatorios para atraso de propagacao nos enlaces
 

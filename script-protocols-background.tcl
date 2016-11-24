@@ -29,7 +29,7 @@ set nSenders   [getOption "--senders"      10]
 set nReceivers [getOption "--receivers"     1]
 set endTime    [getOption "--duration"    600]
 
-source tfg.tcl
+source [file dirname $argv0]/tfg.tcl
 
 # Diretory in which trace.tr will be written
 set param(dir) [getOption "--outDir" "."]

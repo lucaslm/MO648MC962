@@ -1,0 +1,14 @@
+#set term postscript eps dl 1.7 "Helvetica" 17
+set term png
+set encoding iso_8859_1
+set xlabel 'capacidade do enlace em Mbps'
+set xtics (155,"\n622"622,1000,2500,10000)
+set xrange [0:10150]
+set mytics
+set style data linespoints
+set yrange [0:1]
+
+set output "utilizacao-banda-variavel.png"
+set ylabel "Utilização do enlace"
+plot 'utilizacao-banda-variavel' title '' with linespoints 1, \
+'utilizacao-banda-variavel' using 1:2:3 notitle with errorbars 1

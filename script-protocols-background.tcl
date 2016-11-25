@@ -1,6 +1,12 @@
-proc getOption {argName defaultValue} {
+proc isOptionSet {optionName} {
     global argv
-    set index [lsearch $argv $argName]
+    set index [lsearch $argv $optionName]
+    return [expr $index > -1]
+}
+
+proc getOptionValue {optionName defaultValue} {
+    global argv
+    set index [lsearch $argv $optionName]
     if {$index > -1} {
         return [lindex $argv [expr $index + 1]]
     } else {
@@ -24,19 +30,18 @@ proc agentByProtocol {protocol} {
 
 set banda 1000Mb
 set banda1 1000000000
-set conexoes   [getOption "--connections"  16]
-set nSenders   [getOption "--senders"      10]
-set nReceivers [getOption "--receivers"     1]
-set endTime    [getOption "--duration"    600]
-
-source [file dirname $argv0]/tfg.tcl
+set conexoes   [getOptionValue "--connections"  16]
+set nSenders   [getOptionValue "--senders"      10]
+set nReceivers [getOptionValue "--receivers"     1]
+set endTime    [getOptionValue "--duration"    600]
+set bgTraffic  [isOptionSet    "==bgTraffic"]
 
 # Diretory in which trace.tr will be written
-set param(dir) [getOption "--outDir" "."]
+set param(dir) [getOptionValue "--outDir" "."]
 puts "Output directory is $param(dir)"
 
 # Protocol to use
-set protocol [getOption "--protocol" "TCP"]
+set protocol [getOptionValue "--protocol" "TCP"]
 set protocol [string toupper $protocol]
 puts "Chosen Protocol is $protocol"
 
@@ -46,8 +51,6 @@ puts "Chosen Protocol is $protocol"
 set ns		[new Simulator]
 set tracefd     [open $param(dir)/simple.tr w]
 $ns trace-all $tracefd
-
-set tfg_trace_file $param(dir)/tfg.tr
 
 # Geracao de numeros aleatorios para atraso de propagacao nos enlaces
 
@@ -85,6 +88,19 @@ $ns duplex-link $r(0) $r(1) $banda 100ms DropTail
 $ns queue-limit $r(0) $r(1) $buffer_size
 $ns queue-limit $r(1) $r(0) $buffer_size
 
+# Prints node ids on trace file to help AWK scripts process it
+puts $tracefd "NODES IDS"
+puts $tracefd "r_0 -> [$r(0) id]"
+puts $tracefd "r_1 -> [$r(1) id]"
+for {set i 0} {$i < $nSenders}   {incr i} {
+    puts $tracefd "node_s_$i -> [$node_s($i) id]"
+}
+for {set i 0} {$i < $nReceivers} {incr i} {
+    puts $tracefd "node_r_$i -> [$node_r($i) id]"
+}
+puts $tracefd "\n"
+
+
 
 # Esta secao pode ser utilizada para definicoes indicadas para o DCTCP ou DCUDP
 
@@ -99,68 +115,76 @@ if {$protocol eq "DCTCP"} {
 ################################################
 #Trafego Background
 
-#set taxa [expr $banda1 * 0.2]
-set taxa 0.4
+if {$bgTraffic} {
 
-#######################################################
-# Gerando o trafego background
-#######################################################
-set rho_ftp [expr  $taxa * 0.80]
-#set rho_web [expr $taxa * 0.56]
-set rho_udp [expr  $banda1 * 0.20]
+  set tfg_trace_file tfg.tr
 
-#######################################################
-### Trafego background FTP (24%)
-#######################################################
-set s_ftp_rv [$ns node]
-set d_ftp_rv [$ns node]
+  source [file dirname $argv0]/tfg.tcl
 
-# enlaces
-$ns duplex-link $s_ftp_rv $r(1) $banda 10ms DropTail
-$ns duplex-link $r(0) $d_ftp_rv $banda 10ms DropTail
+  #set taxa [expr $banda1 * 0.2]
+  set taxa 0.4
 
-# criacao do gerador de trafego
-set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv $banda1 $rho_ftp $tfg_trace_file]
+  #######################################################
+  # Gerando o trafego background
+  #######################################################
+  set rho_ftp [expr  $taxa * 0.80]
+  #set rho_web [expr $taxa * 0.56]
+  set rho_udp [expr  $banda1 * 0.20]
 
-$tfg_ftp_rv set dist_       	expo
-$tfg_ftp_rv set avg_len_b_ 	524288
+  #######################################################
+  ### Trafego background FTP (24%)
+  #######################################################
+  set s_ftp_rv [$ns node]
+  set d_ftp_rv [$ns node]
 
-$tfg_ftp_rv set tcp_flavor_ 	TCP/Sack1 
-$tfg_ftp_rv set tcppsize_   	1500
-$tfg_ftp_rv set windowsize_   	1000
-$tfg_ftp_rv set ecnsupport_	0
-$tfg_ftp_rv set limittransmit_ 	0
-$tfg_ftp_rv set overhead_h 0.000008
-# inicia geracao de trafego
-$tfg_ftp_rv start
+  # enlaces
+  $ns duplex-link $s_ftp_rv $r(1) $banda 10ms DropTail
+  $ns duplex-link $r(0) $d_ftp_rv $banda 10ms DropTail
 
-#######################################################
-### Trafego background UDP (20%)
-#######################################################
-set u(1) [$ns node]
+  # criacao do gerador de trafego
+  set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv $banda1 $rho_ftp $tfg_trace_file]
 
-set udp_rv [new Agent/UDP]
+  $tfg_ftp_rv set dist_       	expo
+  $tfg_ftp_rv set avg_len_b_ 	524288
 
-$ns attach-agent $u(1) $udp_rv
+  $tfg_ftp_rv set tcp_flavor_ 	TCP/Sack1 
+  $tfg_ftp_rv set tcppsize_   	1500
+  $tfg_ftp_rv set windowsize_   	1000
+  $tfg_ftp_rv set ecnsupport_	0
+  $tfg_ftp_rv set limittransmit_ 	0
+  $tfg_ftp_rv set overhead_h 0.000008
+  # inicia geracao de trafego
+  $tfg_ftp_rv start
 
-set cbr_rv [new Application/Traffic/CBR]
+  #######################################################
+  ### Trafego background UDP (20%)
+  #######################################################
+  set u(1) [$ns node]
+
+  set udp_rv [new Agent/UDP]
+
+  $ns attach-agent $u(1) $udp_rv
+
+  set cbr_rv [new Application/Traffic/CBR]
 
 
-$cbr_rv attach-agent $udp_rv
-$cbr_rv set packetSize_ 1500
-$cbr_rv set rate_ $rho_udp
+  $cbr_rv attach-agent $udp_rv
+  $cbr_rv set packetSize_ 1500
+  $cbr_rv set rate_ $rho_udp
 
-set n(1) [$ns node]
-set null_rv [new Agent/Null]
+  set n(1) [$ns node]
+  set null_rv [new Agent/Null]
 
-$ns attach-agent $n(1) $null_rv
-$ns connect $udp_rv $null_rv
+  $ns attach-agent $n(1) $null_rv
+  $ns connect $udp_rv $null_rv
 
-$ns duplex-link $u(1) $r(1) $banda 11ms DropTail
-$ns duplex-link $n(1) $r(0) $banda 11ms DropTail
+  $ns duplex-link $u(1) $r(1) $banda 11ms DropTail
+  $ns duplex-link $n(1) $r(0) $banda 11ms DropTail
 
-$ns at 0.01 "$cbr_rv start"
-$ns at $endTime "$cbr_rv stop"
+  $ns at 0.01 "$cbr_rv start"
+  $ns at $endTime "$cbr_rv stop"
+
+}
 
 ################################################
 

@@ -34,7 +34,7 @@ set conexoes   [getOptionValue "--connections"  16]
 set nSenders   [getOptionValue "--senders"      10]
 set nReceivers [getOptionValue "--receivers"     1]
 set endTime    [getOptionValue "--duration"    600]
-set bgTraffic  [isOptionSet    "==bgTraffic"]
+set bgTraffic  [isOptionSet    "--bgTraffic"]
 
 # Diretory in which trace.tr will be written
 set param(dir) [getOptionValue "--outDir" "."]

@@ -255,6 +255,8 @@ $ns at $endTime "stop"
 
 proc stop {} {
     global ns tracefd
+    global endTime
+    puts $tracefd "x $endTime End of simulation"
     $ns flush-trace
     close $tracefd
     exit 0

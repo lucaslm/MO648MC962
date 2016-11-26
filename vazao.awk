@@ -7,12 +7,15 @@ $0 ~ /^node_r_[0-9]+ -> [0-9]+$/{
 # to sum all data relayed to any receiver
 {
     if ($1=="r" && ($5=="DCCP_Data" || $5=="DCCP_DataAck") && $4 in receivers){
-        soma = soma + $6
+        totalReceivedBytes = totalReceivedBytes + $6
     }
 }
 
 END{
-    vazao = (soma/10)
-    vazao = vazao/1024/1024*8
-    print soma, vazao
+    duration=$2
+    # Throughput in bytes per seconds
+    throughput = (totalReceivedBytes/duration)
+    # Throughput in Mi bits per second
+    throughput = (throughput*8)/(1024*1024)
+    print totalReceivedBytes, throughput
 }

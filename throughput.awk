@@ -6,7 +6,7 @@ $0 ~ /^node_r_[0-9]+ -> [0-9]+$/{
 # Searches all the lines for ns event traces,
 # to sum all data relayed to any receiver
 {
-    if ($1=="r" && ($5=="DCCP_Data" || $5=="DCCP_DataAck") && $4 in receivers){
+    if ($1=="r" && ($5=="tcp" || $5=="DCCP_Data" || $5=="DCCP_DataAck") && $4 in receivers){
         totalReceivedBytes = totalReceivedBytes + $6
     }
 }

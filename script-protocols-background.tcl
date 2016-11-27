@@ -1,3 +1,23 @@
+proc toBitsPerSecond {bw} {
+    if {[string is double $bw]} {
+        return $bw
+    } else {
+        regexp {([0-9]*\.?[0-9]+(e[0-9]+)?)([MmKk])?([Bb])?} $bw fullMatch n expo prefix unity
+        if {[string equal $fullMatch $bw]} {
+            if {[string equal [string toupper $prefix] "K"]} {
+                set n [expr 1000*$n]
+            } else {
+                set n [expr 1000000*$n]
+            }
+            if {[string equal $unity "B"]} {
+                set n [expr 8*$n]
+            }
+            return $n
+        }
+        return 0
+    }
+}
+
 proc isOptionSet {optionName} {
     global argv
     set index [lsearch $argv $optionName]
@@ -26,15 +46,17 @@ proc agentByProtocol {protocol} {
     }
 }
 
-# Setup da banda do enlace, numero de conexoes e tempo de simulacao
-
-set banda 1000Mb
-set banda1 1000000000
-set conexoes   [getOptionValue "--connections"  16]
-set nSenders   [getOptionValue "--senders"      10]
-set nReceivers [getOptionValue "--receivers"     1]
-set endTime    [getOptionValue "--duration"    600]
-set bgTraffic  [isOptionSet    "--bgTraffic"]
+# Setup of several parameters, such as links bandwidths, numbers of nodes and
+# simulation time.
+# Bandwidth is expressed in bits per second, with optional sufixes.
+# See http://nsnam.sourceforge.net/wiki/index.php/Manual:_OTcl_Linkage#Variable_Bindings
+set bw           [getOptionValue "--bandwidth"           10000Mb]
+set bottleneckBw [getOptionValue "--bottleneckBandWidth"  1000Mb]
+set conexoes     [getOptionValue "--connections"              16]
+set nSenders     [getOptionValue "--senders"                  10]
+set nReceivers   [getOptionValue "--receivers"                 1]
+set endTime      [getOptionValue "--duration"                600]
+set bgTraffic    [isOptionSet    "--bgTraffic"]
 
 # Diretory in which trace.tr will be written
 set param(dir) [getOptionValue "--outDir" "."]
@@ -77,14 +99,14 @@ set buffer_size 2500
 
 for {set i 0} {$i < $nSenders}   {incr i} {
     set node_s($i) [$ns node]
-    $ns duplex-link $node_s($i) $r(0) $banda [expr $delay_s($i)]ms DropTail
+    $ns duplex-link $node_s($i) $r(0) $bw [expr $delay_s($i)]ms DropTail
 }
 for {set i 0} {$i < $nReceivers} {incr i} {
     set node_r($i) [$ns node]
-    $ns duplex-link $r(1) $node_r($i) $banda [expr $delay_r($i)]ms DropTail
+    $ns duplex-link $r(1) $node_r($i) $bw [expr $delay_r($i)]ms DropTail
 }
 
-$ns duplex-link $r(0) $r(1) $banda 100ms DropTail
+$ns duplex-link $r(0) $r(1) $bottleneckBw 100ms DropTail
 $ns queue-limit $r(0) $r(1) $buffer_size
 $ns queue-limit $r(1) $r(0) $buffer_size
 
@@ -121,7 +143,7 @@ if {$bgTraffic} {
 
   source [file dirname $argv0]/tfg.tcl
 
-  #set taxa [expr $banda1 * 0.2]
+  #set taxa [expr [toBitsPerSecond $bw] * 0.2]
   set taxa 0.4
 
   #######################################################
@@ -129,7 +151,7 @@ if {$bgTraffic} {
   #######################################################
   set rho_ftp [expr  $taxa * 0.80]
   #set rho_web [expr $taxa * 0.56]
-  set rho_udp [expr  $banda1 * 0.20]
+  set rho_udp [expr  [toBitsPerSecond $bw] * 0.20]
 
   #######################################################
   ### Trafego background FTP (24%)
@@ -138,11 +160,11 @@ if {$bgTraffic} {
   set d_ftp_rv [$ns node]
 
   # enlaces
-  $ns duplex-link $s_ftp_rv $r(1) $banda 10ms DropTail
-  $ns duplex-link $r(0) $d_ftp_rv $banda 10ms DropTail
+  $ns duplex-link $s_ftp_rv $r(1) $bw 10ms DropTail
+  $ns duplex-link $r(0) $d_ftp_rv $bw 10ms DropTail
 
   # criacao do gerador de trafego
-  set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv $banda1 $rho_ftp $tfg_trace_file]
+  set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv [toBitsPerSecond $bw] $rho_ftp $tfg_trace_file]
 
   $tfg_ftp_rv set dist_       	expo
   $tfg_ftp_rv set avg_len_b_ 	524288
@@ -178,8 +200,8 @@ if {$bgTraffic} {
   $ns attach-agent $n(1) $null_rv
   $ns connect $udp_rv $null_rv
 
-  $ns duplex-link $u(1) $r(1) $banda 11ms DropTail
-  $ns duplex-link $n(1) $r(0) $banda 11ms DropTail
+  $ns duplex-link $u(1) $r(1) $bw 11ms DropTail
+  $ns duplex-link $n(1) $r(0) $bw 11ms DropTail
 
   $ns at 0.01 "$cbr_rv start"
   $ns at $endTime "$cbr_rv stop"

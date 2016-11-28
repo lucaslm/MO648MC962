@@ -52,6 +52,7 @@ proc agentByProtocol {protocol} {
 # See http://nsnam.sourceforge.net/wiki/index.php/Manual:_OTcl_Linkage#Variable_Bindings
 set bw           [getOptionValue "--bandwidth"           10000Mb]
 set bottleneckBw [getOptionValue "--bottleneckBandWidth"  1000Mb]
+set bufferSize   [getOptionValue "--bufferSize"              4MB]
 set conexoes     [getOptionValue "--connections"              16]
 set nSenders     [getOptionValue "--senders"                  10]
 set nReceivers   [getOptionValue "--receivers"                 1]
@@ -74,7 +75,7 @@ set ns		[new Simulator]
 set tracefd     [open $param(dir)/simple.tr w]
 $ns trace-all $tracefd
 
-# Geracao de numeros aleatorios para atraso de propagacao nos enlaces
+# Random numbers generator for links propagation delay
 
 set rng1 [new RNG]
 $rng1 seed 0
@@ -91,11 +92,10 @@ for {set i 0} {$i < $nReceivers} {incr i} {
     set delay_r($i) [expr [$delay_prop value]]
 }
 
-# Declarar nos
+# Node declarations
 
 set r(0) [$ns node]
 set r(1) [$ns node]
-set buffer_size 2500
 
 for {set i 0} {$i < $nSenders}   {incr i} {
     set node_s($i) [$ns node]
@@ -107,8 +107,8 @@ for {set i 0} {$i < $nReceivers} {incr i} {
 }
 
 $ns duplex-link $r(0) $r(1) $bottleneckBw 100ms DropTail
-$ns queue-limit $r(0) $r(1) $buffer_size
-$ns queue-limit $r(1) $r(0) $buffer_size
+$ns queue-limit $r(0) $r(1) $bufferSize
+$ns queue-limit $r(1) $r(0) $bufferSize
 
 # Prints node ids on trace file to help AWK scripts process it
 puts $tracefd "NODES IDS"
@@ -123,8 +123,7 @@ for {set i 0} {$i < $nReceivers} {incr i} {
 puts $tracefd "\n"
 
 
-
-# Esta secao pode ser utilizada para definicoes indicadas para o DCTCP ou DCUDP
+# This section can be used for defining protocol parameters
 
 if {$protocol eq "DCTCP"} {
   Agent/TCP set dctcp_ true
@@ -135,7 +134,7 @@ if {$protocol eq "DCTCP"} {
 #Agent/DCCP/TFRC set use_ecn_remote_ 0
 
 ################################################
-#Trafego Background
+# Background Traffic
 
 if {$bgTraffic} {
 
@@ -147,23 +146,23 @@ if {$bgTraffic} {
   set taxa 0.4
 
   #######################################################
-  # Gerando o trafego background
+  # Generating background traffic
   #######################################################
   set rho_ftp [expr  $taxa * 0.80]
   #set rho_web [expr $taxa * 0.56]
   set rho_udp [expr  [toBitsPerSecond $bw] * 0.20]
 
   #######################################################
-  ### Trafego background FTP (24%)
+  ### FTP background traffic (24%)
   #######################################################
   set s_ftp_rv [$ns node]
   set d_ftp_rv [$ns node]
 
-  # enlaces
+  # links
   $ns duplex-link $s_ftp_rv $r(1) $bw 10ms DropTail
   $ns duplex-link $r(0) $d_ftp_rv $bw 10ms DropTail
 
-  # criacao do gerador de trafego
+  # declaring traffic generator
   set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv [toBitsPerSecond $bw] $rho_ftp $tfg_trace_file]
 
   $tfg_ftp_rv set dist_       	expo
@@ -179,7 +178,7 @@ if {$bgTraffic} {
   $tfg_ftp_rv start
 
   #######################################################
-  ### Trafego background UDP (20%)
+  ### UDP background traffic (20%)
   #######################################################
   set u(1) [$ns node]
 
@@ -210,7 +209,7 @@ if {$bgTraffic} {
 
 ################################################
 
-# Gerador de numeros aleatorios para inicio das transmissoes nos emissores
+# Random numbers generator for sender's transmissions begin time
 set rng0 [new RNG]
 $rng0 seed 0
 
@@ -225,7 +224,7 @@ for {set i 0} {$i < [expr $nSenders * $conexoes]} {incr i} {
 
 ################################################
 
-# Criacao das conexoes para o experimento
+# Creating connections for the experiment
 
 for {set i 0} {$i < $nSenders} {incr i} {
     set sourceAgent($i) [agentByProtocol $protocol]
@@ -243,8 +242,6 @@ for {set i 0} {$i < $nSenders} {incr i} {
     $ns connect $sourceAgent($i) $sinkAgent([expr $i % $nReceivers])
 }
 
-# Mantenham o restante do script
-
 Tracefile set debug_ 0
 
 for {set i 0} {$i < $nSenders} {incr i} {
@@ -257,7 +254,7 @@ for {set i 0} {$i < $nSenders} {incr i} {
     }
 }
 
-# Start e Stop das conexoes 
+# Connections Start and Stop
 
 for {set i 0} {$i < [expr $nSenders * $conexoes]} {incr i} {
     $ns at $starttime($i) "$cbr($i) start"

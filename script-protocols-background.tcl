@@ -59,9 +59,13 @@ set nReceivers   [getOptionValue "--receivers"                 1]
 set endTime      [getOptionValue "--duration"                600]
 set bgTraffic    [isOptionSet    "--bgTraffic"]
 
+# Trace File Name
+set traceFile [getOptionValue "--traceFileName" trace.tr]
+
 # Diretory in which trace.tr will be written
 set param(dir) [getOptionValue "--outDir" "."]
-puts "Output directory is $param(dir)"
+# Makes sure output directory exists
+file mkdir $param(dir)
 
 # Protocol to use
 set protocol [getOptionValue "--protocol" "TCP"]
@@ -72,7 +76,7 @@ puts "Chosen Protocol is $protocol"
 # Initialize Global Variables
 #
 set ns		[new Simulator]
-set tracefd     [open $param(dir)/simple.tr w]
+set tracefd     [open $param(dir)/$traceFile w]
 $ns trace-all $tracefd
 
 # Random numbers generator for links propagation delay

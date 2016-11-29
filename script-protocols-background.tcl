@@ -18,6 +18,23 @@ proc toBitsPerSecond {bw} {
     }
 }
 
+proc toSeconds {t} {
+    if {[string is double $t]} {
+        return $t
+    } else {
+        regexp {([0-9]*\.?[0-9]+(e[0-9]+)?)([mnp])?s?} $t fullMatch n expo prefix
+        if {[string equal $fullMatch $t]} {
+          switch $prefix {
+            "m" { set n [expr double($n)/1000] }
+            "n" { set n [expr double($n)/1000000000] }
+            "p" { set n [expr double($n)/1000000000000] }
+          }
+          return $n
+        }
+        return 0
+    }
+}
+
 proc isOptionSet {optionName} {
     global argv
     set index [lsearch $argv $optionName]
@@ -53,10 +70,10 @@ proc agentByProtocol {protocol} {
 set bw           [getOptionValue "--bandwidth"           10000Mb]
 set bottleneckBw [getOptionValue "--bottleneckBandWidth"  1000Mb]
 set bufferSize   [getOptionValue "--bufferSize"              4MB]
-set conexoes     [getOptionValue "--connections"              16]
+set conexoes     [getOptionValue "--connections"               1]
 set nSenders     [getOptionValue "--senders"                  10]
 set nReceivers   [getOptionValue "--receivers"                 1]
-set endTime      [getOptionValue "--duration"                600]
+set endTime      [getOptionValue "--duration"                  1]
 set bgTraffic    [isOptionSet    "--bgTraffic"]
 
 # Trace File Name
@@ -81,13 +98,13 @@ $ns trace-all $tracefd
 
 # Random numbers generator for links propagation delay
 
-set rng1 [new RNG]
-$rng1 seed 0
+set rng [new RNG]
+$rng seed 0
 
 set delay_prop [new RandomVariable/Uniform]
 $delay_prop set min_ 0.0
 $delay_prop set max_ 0.9
-$delay_prop use-rng $rng1
+$delay_prop use-rng $rng
 
 for {set i 0} {$i < $nSenders} {incr i} {
     set delay_s($i) [expr [$delay_prop value]]
@@ -213,21 +230,6 @@ if {$bgTraffic} {
 
 ################################################
 
-# Random numbers generator for sender's transmissions begin time
-set rng0 [new RNG]
-$rng0 seed 0
-
-set random_start [new RandomVariable/Uniform]
-$random_start set min_ 0
-$random_start set max_ 9
-$random_start use-rng $rng0
-
-for {set i 0} {$i < [expr $nSenders * $conexoes]} {incr i} {
-    set starttime($i) [expr [$random_start value]]
-}
-
-################################################
-
 # Creating connections for the experiment
 
 for {set i 0} {$i < $nSenders} {incr i} {
@@ -252,8 +254,7 @@ for {set i 0} {$i < $nSenders} {incr i} {
     for {set j 0} {$j < $conexoes} {incr j} {
         set k [expr $i * $conexoes + $j]
         set cbr($k) [new Application/Traffic/CBR] 
-        $cbr($k) set rate_ 10000Mb
-        $cbr($k) set packetSize_ 100000
+        $cbr($k) set rate_ 1600Mb
         $cbr($k) attach-agent $sourceAgent($i)
     }
 }
@@ -261,7 +262,7 @@ for {set i 0} {$i < $nSenders} {incr i} {
 # Connections Start and Stop
 
 for {set i 0} {$i < [expr $nSenders * $conexoes]} {incr i} {
-    $ns at $starttime($i) "$cbr($i) start"
+    $ns at 0 "$cbr($i) start"
     $ns at $endTime "$cbr($i) stop"
 }
 
@@ -279,7 +280,7 @@ $ns at $endTime "stop"
 proc stop {} {
     global ns tracefd
     global endTime
-    puts $tracefd "x $endTime End of simulation"
+    puts $tracefd "x [toSeconds $endTime] End of simulation"
     $ns flush-trace
     close $tracefd
     exit 0

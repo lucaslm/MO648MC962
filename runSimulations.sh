@@ -1,5 +1,20 @@
 #!/bin/bash
 
+sd()
+{
+  samples=$1
+  mean=$2
+  variance=0
+  for sample in "${samples[@]}"
+  do
+    diff=$(bc -l <<< "$mean - $sample")
+    variance=$(bc -l <<< "$variance + $diff*$diff")
+  done
+  variance=$(bc -l <<< "$variance/${#samples[@]}")
+  sd=$(bc -l <<< "sqrt($variance)")
+  echo $sd
+}
+
 nsPath=~/ns-allinone-2.35/ns-2.35/ns
 protocols=("tcp" "dctcp" "dccp")
 durations=("1s" "10ms")
@@ -30,18 +45,24 @@ do
     for n in "${nSenders[@]}"
     do
       i=0
+      samples=()
       sampleSum=0
       outDir=out/$protocol/$duration/${n}Senders
       echo -n "${n}, " >> $csvFile
       while [ $((i+=1)) -le $nSamples ]
       do
         sample=$(awk -f throughput.awk $outDir/trace$i.tr)
+        samples+=($sample)
         sampleSum=$(bc -l <<< "$sampleSum+$sample")
         echo -n "$sample, " >> $csvFile
       done
-      echo $(bc -l <<< "$sampleSum/$nSamples")", " >> $csvFile
+      # Compute and print mean and 95% confidence interval for this row
+      mean=$(bc -l <<< "$sampleSum/$nSamples")
+      std_dev=$(sd $samples $mean)
+      error=$(bc -l <<< "1.96*$std_dev/sqrt($nSamples)")
+      echo -n $mean", " >> $csvFile
+      echo    $error    >> $csvFile 
     done
-    # TODO: Compute and print confidence interval for this row
     # gnuplot -e "dataFile='out_$protocol/throughput.data'; outPath='out_$protocol/throughput.png'" throughput.gpi
   done
 done

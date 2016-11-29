@@ -76,8 +76,9 @@ set nReceivers   [getOptionValue "--receivers"                 1]
 set endTime      [getOptionValue "--duration"                  1]
 set bgTraffic    [isOptionSet    "--bgTraffic"]
 
-# Trace File Name
+# Trace Files Names
 set traceFile [getOptionValue "--traceFileName" trace.tr]
+set tfgTraceFile [getOptionValue "--tfgTraceFileName" ""]
 
 # Diretory in which trace.tr will be written
 set param(dir) [getOptionValue "--outDir" "."]
@@ -159,8 +160,6 @@ if {$protocol eq "DCTCP"} {
 
 if {$bgTraffic} {
 
-  set tfg_trace_file tfg.tr
-
   source [file dirname $argv0]/tfg.tcl
 
   #set taxa [expr [toBitsPerSecond $bw] * 0.2]
@@ -184,7 +183,7 @@ if {$bgTraffic} {
   $ns duplex-link $r(0) $d_ftp_rv $bw 10ms DropTail
 
   # declaring traffic generator
-  set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv [toBitsPerSecond $bw] $rho_ftp $tfg_trace_file]
+  set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv [toBitsPerSecond $bw] $rho_ftp $tfgTraceFile]
 
   $tfg_ftp_rv set dist_       	expo
   $tfg_ftp_rv set avg_len_b_ 	524288

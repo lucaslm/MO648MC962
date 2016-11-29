@@ -30,7 +30,7 @@
 
 Class TrafficGen
 
-TrafficGen instproc init {ns inode enode bbw rho tracefilename } {
+TrafficGen instproc init {ns inode enode bbw rho {tracefilename tfg.tr} } {
 
     $self instvar ns_ inode_ enode_ bbw_ rng_
     $self instvar MAXINT
@@ -60,7 +60,12 @@ TrafficGen instproc start {} {
 #max_ssthresh_h 
     #low_window_h high_window_h high_p_h high_decrease_h max_ssthresh_h    
     
-    set tracefilefd_ [open $param(dir)/$tracefilename_ w] ;# file used to write events
+    # if no trace file was set, redirect output to null device
+    if {$tracefilename_ eq ""} {
+      set tracefilefd_ [open /dev/null w]
+    } else {
+      set tracefilefd_ [open $param(dir)/$tracefilename_ w] ;# file used to write events
+    }
 
     # set TCP agents parameters
     Agent/TCP set window_ $windowsize_;# disable flow control

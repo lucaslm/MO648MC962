@@ -88,7 +88,6 @@ file mkdir $param(dir)
 # Protocol to use
 set protocol [getOptionValue "--protocol" "TCP"]
 set protocol [string toupper $protocol]
-puts "Chosen Protocol is $protocol"
 
 #
 # Initialize Global Variables

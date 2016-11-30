@@ -1,0 +1,19 @@
+reset
+set terminal png
+set output outPath
+# Plot once to store maximum value
+plot dataFile using 1:7:8 with yerrorbars
+
+MAX=GPVAL_X_MAX
+
+set xrange [0:MAX+MAX*0.05]
+
+set terminal png
+set output outPath
+#set term postscript eps dl 1.7 "Helvetica" 17
+set encoding iso_8859_1
+set xlabel 'Number of Senders'
+set ylabel 'ThroughPut (Mbps)'
+set style data linespoints
+
+plot dataFile using 1:7:8 title '' with yerrorbars

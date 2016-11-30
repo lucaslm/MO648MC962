@@ -40,6 +40,7 @@ do
     # Extract throughput from those traces
     echo "Computing senders/throughput for protocol $protocol during a $duration interval"
     csvFile=out/$protocol/$duration/throughput.csv
+    imgFile=out/$protocol/$duration/throughput.png
     touch $csvFile
     truncate -s 0 $csvFile
     for n in "${nSenders[@]}"
@@ -48,22 +49,23 @@ do
       samples=()
       sampleSum=0
       outDir=out/$protocol/$duration/${n}Senders
-      echo -n "${n}, " >> $csvFile
+      echo -n "${n} " >> $csvFile
       while [ $((i+=1)) -le $nSamples ]
       do
         sample=$(awk -f throughput.awk $outDir/trace$i.tr)
         samples+=($sample)
         sampleSum=$(bc -l <<< "$sampleSum+$sample")
-        echo -n "$sample, " >> $csvFile
+        echo -n "$sample " >> $csvFile
       done
       # Compute and print mean and 95% confidence interval for this row
       mean=$(bc -l <<< "$sampleSum/$nSamples")
       std_dev=$(sd $samples $mean)
       error=$(bc -l <<< "1.96*$std_dev/sqrt($nSamples)")
-      echo -n $mean", " >> $csvFile
+      echo -n $mean" " >> $csvFile
       echo    $error    >> $csvFile 
     done
-    # gnuplot -e "dataFile='out_$protocol/throughput.data'; outPath='out_$protocol/throughput.png'" throughput.gpi
+    # Plot Graphics
+    gnuplot -e "dataFile='$csvFile'; outPath='$imgFile'" throughput.gpi
   done
 done
 

@@ -51,11 +51,11 @@ proc getOptionValue {optionName defaultValue} {
     }
 }
 
-proc agentByProtocol {protocol} {
+proc agentByProtocol {protocol {sink 0}} {
     switch $protocol {
         "TCP" -
         "DCTCP" {
-            return [new Agent/TCP]
+            if {$sink} {return [new Agent/TCPSink]} else {return [new Agent/TCP]}
         }
         "DCCP" {
             return [new Agent/DCCP/TFRC]
@@ -95,6 +95,9 @@ set protocol [string toupper $protocol]
 set ns		[new Simulator]
 set tracefd     [open $param(dir)/$traceFile w]
 $ns trace-all $tracefd
+
+# ns scheduler does not support ohter unities yet
+set endTime [toSeconds $endTime]
 
 # Random numbers generator for links propagation delay
 
@@ -236,7 +239,7 @@ for {set i 0} {$i < $nSenders} {incr i} {
 }
 
 for {set i 0} {$i < $nReceivers} {incr i} {
-    set sinkAgent($i) [agentByProtocol $protocol]
+    set sinkAgent($i) [agentByProtocol $protocol 1]
     $ns attach-agent $node_r($i) $sinkAgent($i)
     $ns at 0.1 "$sinkAgent($i) listen"
 }

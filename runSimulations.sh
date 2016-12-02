@@ -65,7 +65,7 @@ do
       echo    $error    >> $csvFile 
     done
     # Plot Graphics
-    gnuplot -e "dataFile='$csvFile'; outPath='$imgFile'" throughput.gpi
+    gnuplot -e "dataFile='$csvFile'; outPath='$imgFile'; yColumn=$(($nSamples+2))" throughput.gpi
   done
 done
 

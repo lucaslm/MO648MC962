@@ -2,7 +2,7 @@ reset
 set terminal png
 set output outPath
 # Plot once to store maximum value
-plot dataFile using 1:7:8 with yerrorbars
+plot dataFile using 1:(column(yColumn)):(column(yColumn+1)) with yerrorbars
 
 MAX=GPVAL_X_MAX
 
@@ -16,4 +16,4 @@ set xlabel 'Number of Senders'
 set ylabel 'ThroughPut (Mbps)'
 set style data linespoints
 
-plot dataFile using 1:7:8 title '' with yerrorbars
+plot dataFile using 1:(column(yColumn)):(column(yColumn+1)) title '' with yerrorbars

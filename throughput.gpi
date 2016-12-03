@@ -8,13 +8,12 @@ if (!exists("yColumn")) yColumn=2
 if (exists("errorColumn")) \
   plot dataFile using 1:(column(yColumn)):(column(errorColumn)) with yerrorbars; \
 else \
-  plot dataFile using 1:(column(yColumn))
+  plot dataFile using 1:(column(yColumn)) with points
 
 MAX=GPVAL_X_MAX
 
 set xrange [0:MAX+MAX*0.05]
 
-set terminal png
 set output outPath
 #set term postscript eps dl 1.7 "Helvetica" 17
 set encoding iso_8859_1
@@ -25,4 +24,4 @@ set style data linespoints
 if (exists("errorColumn")) \
   plot dataFile using 1:(column(yColumn)):(column(errorColumn)) title '' with yerrorbars; \
 else \
-  plot dataFile using 1:(column(yColumn)) title ''
+  plot dataFile using 1:(column(yColumn)) title '' with points

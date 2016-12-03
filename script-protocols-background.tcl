@@ -67,14 +67,15 @@ proc agentByProtocol {protocol {sink 0}} {
 # simulation time.
 # Bandwidth is expressed in bits per second, with optional sufixes.
 # See http://nsnam.sourceforge.net/wiki/index.php/Manual:_OTcl_Linkage#Variable_Bindings
-set bw           [getOptionValue "--bandwidth"           10000Mb]
-set bottleneckBw [getOptionValue "--bottleneckBandWidth"  1000Mb]
-set bufferSize   [getOptionValue "--bufferSize"              4MB]
-set conexoes     [getOptionValue "--connections"               1]
-set nSenders     [getOptionValue "--senders"                  10]
-set nReceivers   [getOptionValue "--receivers"                 1]
-set endTime      [getOptionValue "--duration"                  1]
-set bgTraffic    [isOptionSet    "--bgTraffic"]
+set senderBw   [getOptionValue "--sendersBandwidth"               10000Mb]
+set receiverBw [getOptionValue "--receiverBandWidth"               1000Mb]
+set pckgSize   [getOptionValue "--pckgSize"                          1460]
+set bufferSize [getOptionValue "--bufferSize"        [expr 4e6/$pckgSize]]
+set conexoes   [getOptionValue "--connections"                          1]
+set nSenders   [getOptionValue "--senders"                             10]
+set nReceivers [getOptionValue "--receivers"                            1]
+set endTime    [getOptionValue "--duration"                             1]
+set bgTraffic  [isOptionSet    "--bgTraffic"]
 
 # Trace Files Names
 set traceFile [getOptionValue "--traceFileName" trace.tr]
@@ -99,45 +100,24 @@ $ns trace-all $tracefd
 # ns scheduler does not support ohter unities yet
 set endTime [toSeconds $endTime]
 
-# Random numbers generator for links propagation delay
-
-set rng [new RNG]
-$rng seed 0
-
-set delay_prop [new RandomVariable/Uniform]
-$delay_prop set min_ 0.0
-$delay_prop set max_ 0.9
-$delay_prop use-rng $rng
-
-for {set i 0} {$i < $nSenders} {incr i} {
-    set delay_s($i) [expr [$delay_prop value]]
-}
-for {set i 0} {$i < $nReceivers} {incr i} {
-    set delay_r($i) [expr [$delay_prop value]]
-}
-
 # Node declarations
 
-set r(0) [$ns node]
-set r(1) [$ns node]
+set e [$ns node]
 
 for {set i 0} {$i < $nSenders}   {incr i} {
     set node_s($i) [$ns node]
-    $ns duplex-link $node_s($i) $r(0) $bw [expr $delay_s($i)]ms DropTail
+    $ns duplex-link $node_s($i) $e $senderBw 0.025ms DropTail
 }
 for {set i 0} {$i < $nReceivers} {incr i} {
     set node_r($i) [$ns node]
-    $ns duplex-link $r(1) $node_r($i) $bw [expr $delay_r($i)]ms DropTail
+    $ns duplex-link $node_r($i) $e $receiverBw 0.025ms DropTail
+    $ns queue-limit $node_r($i) $e $bufferSize
+    $ns queue-limit $e $node_r($i) $bufferSize
 }
-
-$ns duplex-link $r(0) $r(1) $bottleneckBw 100ms DropTail
-$ns queue-limit $r(0) $r(1) $bufferSize
-$ns queue-limit $r(1) $r(0) $bufferSize
 
 # Prints node ids on trace file to help AWK scripts process it
 puts $tracefd "NODES IDS"
-puts $tracefd "r_0 -> [$r(0) id]"
-puts $tracefd "r_1 -> [$r(1) id]"
+puts $tracefd "e -> [$e id]"
 for {set i 0} {$i < $nSenders}   {incr i} {
     puts $tracefd "node_s_$i -> [$node_s($i) id]"
 }
@@ -181,8 +161,8 @@ if {$bgTraffic} {
   set d_ftp_rv [$ns node]
 
   # links
-  $ns duplex-link $s_ftp_rv $r(1) $bw 10ms DropTail
-  $ns duplex-link $r(0) $d_ftp_rv $bw 10ms DropTail
+  $ns duplex-link $s_ftp_rv $e $bw 10ms DropTail
+  $ns duplex-link $e $d_ftp_rv $bw 10ms DropTail
 
   # declaring traffic generator
   set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv [toBitsPerSecond $bw] $rho_ftp $tfgTraceFile]
@@ -221,8 +201,8 @@ if {$bgTraffic} {
   $ns attach-agent $n(1) $null_rv
   $ns connect $udp_rv $null_rv
 
-  $ns duplex-link $u(1) $r(1) $bw 11ms DropTail
-  $ns duplex-link $n(1) $r(0) $bw 11ms DropTail
+  $ns duplex-link $u(1) $e $bw 11ms DropTail
+  $ns duplex-link $n(1) $e $bw 11ms DropTail
 
   $ns at 0.01 "$cbr_rv start"
   $ns at $endTime "$cbr_rv stop"
@@ -256,6 +236,7 @@ for {set i 0} {$i < $nSenders} {incr i} {
         set k [expr $i * $conexoes + $j]
         set cbr($k) [new Application/Traffic/CBR] 
         $cbr($k) set rate_ 1600Mb
+        $cbr($i) set packetSize_ $pckgSize
         $cbr($k) attach-agent $sourceAgent($i)
     }
 }
@@ -274,8 +255,7 @@ for {set i 0} {$i < $nReceivers} {incr i} {
     $ns at $endTime "$node_r($i) reset"
 }
 
-$ns at $endTime "$r(0) reset"
-$ns at $endTime "$r(1) reset"
+$ns at $endTime "$e reset"
 $ns at $endTime "stop" 
 
 proc stop {} {

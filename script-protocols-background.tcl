@@ -67,15 +67,15 @@ proc agentByProtocol {protocol {sink 0}} {
 # simulation time.
 # Bandwidth is expressed in bits per second, with optional sufixes.
 # See http://nsnam.sourceforge.net/wiki/index.php/Manual:_OTcl_Linkage#Variable_Bindings
-set senderBw   [getOptionValue "--sendersBandwidth"               10000Mb]
-set receiverBw [getOptionValue "--receiverBandWidth"               1000Mb]
-set pckgSize   [getOptionValue "--pckgSize"                          1460]
-set bufferSize [getOptionValue "--bufferSize"        [expr 4e6/$pckgSize]]
-set conexoes   [getOptionValue "--connections"                          1]
-set nSenders   [getOptionValue "--senders"                             10]
-set nReceivers [getOptionValue "--receivers"                            1]
-set endTime    [getOptionValue "--duration"                             1]
-set bgTraffic  [isOptionSet    "--bgTraffic"]
+set senderBw    [getOptionValue "--sendersBandwidth"               10000Mb]
+set receiverBw  [getOptionValue "--receiverBandWidth"               1000Mb]
+set pckgSize    [getOptionValue "--pckgSize"                          1460]
+set bufferSize  [getOptionValue "--bufferSize"        [expr 4e6/$pckgSize]]
+set connections [getOptionValue "--connections"                          1]
+set nSenders    [getOptionValue "--senders"                             10]
+set nReceivers  [getOptionValue "--receivers"                            1]
+set endTime     [getOptionValue "--duration"                             1]
+set bgTraffic   [isOptionSet    "--bgTraffic"]
 
 # Trace Files Names
 set traceFile [getOptionValue "--traceFileName" trace.tr]
@@ -214,36 +214,46 @@ if {$bgTraffic} {
 # Creating connections for the experiment
 
 for {set i 0} {$i < $nSenders} {incr i} {
-    set sourceAgent($i) [agentByProtocol $protocol]
-    $ns attach-agent $node_s($i) $sourceAgent($i)
+    for {set j 0} {$j < $connections} {incr j} {
+      set k [expr $i * $connections + $j]
+      set sourceAgent($k) [agentByProtocol $protocol]
+      $ns attach-agent $node_s($i) $sourceAgent($k)
+    }
 }
 
 for {set i 0} {$i < $nReceivers} {incr i} {
-    set sinkAgent($i) [agentByProtocol $protocol 1]
-    $ns attach-agent $node_r($i) $sinkAgent($i)
-    $ns at 0.1 "$sinkAgent($i) listen"
+    for {set j 0} {$j < $connections} {incr j} {
+      set k [expr $i * $connections + $j]
+      set sinkAgent($k) [agentByProtocol $protocol 1]
+      $ns attach-agent $node_r($i) $sinkAgent($k)
+      $ns at 0 "$sinkAgent($k) listen"
+    }
 }
 
 # Connect all senders to one receiver
 for {set i 0} {$i < $nSenders} {incr i} {
-    $ns connect $sourceAgent($i) $sinkAgent([expr $i % $nReceivers])
+    for {set j 0} {$j < $connections} {incr j} {
+        set k [expr $i * $connections + $j]
+        set l [expr $i % $nReceivers  + $j]
+        $ns connect $sourceAgent($k) $sinkAgent($l)
+    }
 }
 
 Tracefile set debug_ 0
 
 for {set i 0} {$i < $nSenders} {incr i} {
-    for {set j 0} {$j < $conexoes} {incr j} {
-        set k [expr $i * $conexoes + $j]
+    for {set j 0} {$j < $connections} {incr j} {
+        set k [expr $i * $connections + $j]
         set cbr($k) [new Application/Traffic/CBR] 
         $cbr($k) set rate_ 1600Mb
         $cbr($i) set packetSize_ $pckgSize
-        $cbr($k) attach-agent $sourceAgent($i)
+        $cbr($k) attach-agent $sourceAgent($k)
     }
 }
 
 # Connections Start and Stop
 
-for {set i 0} {$i < [expr $nSenders * $conexoes]} {incr i} {
+for {set i 0} {$i < [expr $nSenders * $connections]} {incr i} {
     $ns at 0 "$cbr($i) start"
     $ns at $endTime "$cbr($i) stop"
 }

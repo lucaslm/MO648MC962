@@ -189,7 +189,7 @@ if {$bgTraffic} {
 
   source [file dirname $argv0]/tfg.tcl
 
-  #set taxa [expr [toBitsPerSecond $bw] * 0.2]
+  #set taxa [expr [toBitsPerSecond $senderBw] * 0.2]
   set taxa 0.4
 
   #######################################################
@@ -197,7 +197,7 @@ if {$bgTraffic} {
   #######################################################
   set rho_ftp [expr  $taxa * 0.80]
   #set rho_web [expr $taxa * 0.56]
-  set rho_udp [expr  [toBitsPerSecond $bw] * 0.20]
+  set rho_udp [expr  [toBitsPerSecond $senderBw] * 0.20]
 
   #######################################################
   ### FTP background traffic (24%)
@@ -206,11 +206,14 @@ if {$bgTraffic} {
   set d_ftp_rv [$ns node]
 
   # links
-  $ns duplex-link $s_ftp_rv $e $bw 10ms DropTail
-  $ns duplex-link $e $d_ftp_rv $bw 10ms DropTail
+  $ns duplex-link $s_ftp_rv $e $senderBw   10ms DropTail
+  $ns duplex-link $e $d_ftp_rv $receiverBw 10ms DropTail
 
+  set senderBw   [toBitsPerSecond $senderBw]
+  set receiverBw [toBitsPerSecond $receiverBw]
+  set bw [expr $senderBw < $receiverBw ? $senderBw : $receiverBw]
   # declaring traffic generator
-  set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv [toBitsPerSecond $bw] $rho_ftp $tfgTraceFile]
+  set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv $bw $rho_ftp $tfgTraceFile]
 
   $tfg_ftp_rv set dist_       	expo
   $tfg_ftp_rv set avg_len_b_ 	524288
@@ -246,8 +249,8 @@ if {$bgTraffic} {
   $ns attach-agent $n(1) $null_rv
   $ns connect $udp_rv $null_rv
 
-  $ns duplex-link $u(1) $e $bw 11ms DropTail
-  $ns duplex-link $n(1) $e $bw 11ms DropTail
+  $ns duplex-link $u(1) $e $senderBw   11ms DropTail
+  $ns duplex-link $n(1) $e $receiverBw 11ms DropTail
 
   $ns at 0.01 "$cbr_rv start"
   $ns at $endTime "$cbr_rv stop"

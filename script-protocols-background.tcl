@@ -1,22 +1,64 @@
-proc toBitsPerSecond {bw} {
-    if {[string is double $bw]} {
-        return $bw
+proc convertPrefix {value prefix {prefixBase 1000}} {
+    if {[string is double $value]} {
+        set value [expr double($value)]
+        switch $prefix {
+            "p" { return [expr $value*pow($prefixBase, -4)] }
+            "n" { return [expr $value*pow($prefixBase, -3)] }
+            "m" { return [expr $value*pow($prefixBase, -1)] }
+            "K" { return [expr $value*pow($prefixBase,  1)] }
+            "M" { return [expr $value*pow($prefixBase,  2)] }
+            "G" { return [expr $value*pow($prefixBase,  3)] }
+        }
+    }
+    return $value
+}
+
+# This procedure expects a value, representing a bandwidth and converts it to
+# bits per second. SInce this is a rate, any positive racional number is valid.
+# It assumes the unity prefixes have the usual meaning, such as ns does.
+# See http://nsnam.sourceforge.net/wiki/index.php/Manual:_OTcl_Linkage#Variable_Bindings
+proc toBitsPerSecond {value {prefixBase 1000}} {
+    if {[string is double $value]} {
+        # bps is a positive measure
+        if {$value >= 0} {
+            return $value
+        }
     } else {
-        regexp {([0-9]*\.?[0-9]+(e[0-9]+)?)([MmKk])?([Bb])?} $bw fullMatch n expo prefix unity
-        if {[string equal $fullMatch $bw]} {
-            if {[string equal [string toupper $prefix] "K"]} {
-                set n [expr 1000*$n]
-            } else {
-                set n [expr 1000000*$n]
-            }
+        regexp {([0-9]*\.?[0-9]+(e[0-9]+)?)([GMmKk])?([Bb])?} $value fullMatch n expo prefix unity
+        if {[string equal $fullMatch $value]} {
+            set prefix [string toupper $prefix]
+            set n [convertPrefix $n $prefix $prefixBase]
             if {[string equal $unity "B"]} {
                 set n [expr 8*$n]
             }
             return $n
         }
-        return 0
     }
+    return -code error "Could not convert $value to bits per second"
 }
+
+# This procedure expects a value representing a storage capacity and converts
+# it to bytes.
+# It assumes the unity prefixes have the usual meaning
+proc toBytes {value {prefixBase 1000}} {
+    if {[string is double $value]} {
+        if {8*$value == floor(8*$value) && $value >= 0} {
+            return $value
+        }
+    } else {
+        regexp {([0-9]*\.?[0-9]+(e[0-9]+)?)([GMmKk])?([Bb])?} $value fullMatch n expo prefix unity
+        if {[string equal $fullMatch $value]} {
+            set prefix [string toupper $prefix]
+            set n [convertPrefix $n $prefix $prefixBase]
+            if {[string equal $unity "b"]} {
+                return [toBytes [expr double($n)/8]]
+            }
+            return [toBytes $n]
+        }
+    }
+    return -code error "Could not convert $value to bytes"
+}
+
 
 proc toSeconds {t} {
     if {[string is double $t]} {
@@ -24,11 +66,7 @@ proc toSeconds {t} {
     } else {
         regexp {([0-9]*\.?[0-9]+(e[0-9]+)?)([mnp])?s?} $t fullMatch n expo prefix
         if {[string equal $fullMatch $t]} {
-          switch $prefix {
-            "m" { set n [expr double($n)/1000] }
-            "n" { set n [expr double($n)/1000000000] }
-            "p" { set n [expr double($n)/1000000000000] }
-          }
+          set n [convertPrefix $n $prefix]
           return $n
         }
         return 0
@@ -65,16 +103,14 @@ proc agentByProtocol {protocol {sink 0}} {
 
 # Setup of several parameters, such as links bandwidths, numbers of nodes and
 # simulation time.
-# Bandwidth is expressed in bits per second, with optional sufixes.
-# See http://nsnam.sourceforge.net/wiki/index.php/Manual:_OTcl_Linkage#Variable_Bindings
-set senderBw    [getOptionValue "--sendersBandwidth"               10000Mb]
-set receiverBw  [getOptionValue "--receiverBandWidth"               1000Mb]
-set pckgSize    [getOptionValue "--pckgSize"                          1460]
-set bufferSize  [getOptionValue "--bufferSize"        [expr 4e6/$pckgSize]]
-set connections [getOptionValue "--connections"                          1]
-set nSenders    [getOptionValue "--senders"                             10]
-set nReceivers  [getOptionValue "--receivers"                            1]
-set endTime     [getOptionValue "--duration"                             1]
+set senderBw    [getOptionValue "--sendersBandwidth"  10000Mb]
+set receiverBw  [getOptionValue "--receiverBandWidth"  1000Mb]
+set pckgSize    [getOptionValue "--pckgSize"             1460]
+set bufferSize  [getOptionValue "--bufferSize"            4MB]
+set connections [getOptionValue "--connections"             1]
+set nSenders    [getOptionValue "--senders"                10]
+set nReceivers  [getOptionValue "--receivers"               1]
+set endTime     [getOptionValue "--duration"                1]
 set bgTraffic   [isOptionSet    "--bgTraffic"]
 
 # Trace Files Names
@@ -90,6 +126,20 @@ file mkdir $param(dir)
 set protocol [getOptionValue "--protocol" "TCP"]
 set protocol [string toupper $protocol]
 
+# This section can be used for defining protocol parameters
+
+if {$protocol eq "DCTCP"} {
+  Agent/TCP set dctcp_ true
+}
+
+set pckgSize [toBytes $pckgSize 1024]
+Agent/TCP  set packetSize_ $pckgSize
+Agent/DCCP set packetSize_ $pckgSize
+
+#Agent/DCCP/TFRC set ccid_ 3
+#Agent/DCCP/TFRC set use_ecn_local_ 0
+#Agent/DCCP/TFRC set use_ecn_remote_ 0
+
 #
 # Initialize Global Variables
 #
@@ -97,12 +147,18 @@ set ns		[new Simulator]
 set tracefd     [open $param(dir)/$traceFile w]
 $ns trace-all $tracefd
 
-# ns scheduler does not support ohter unities yet
+# ns scheduler only supports time in seconds
 set endTime [toSeconds $endTime]
 
+#
 # Node declarations
+#
 
 set e [$ns node]
+
+# ns queues only support size in number of packages
+set bufferSize [toBytes $bufferSize 1024]
+set bufferSize [expr int($bufferSize/$pckgSize)]
 
 for {set i 0} {$i < $nSenders}   {incr i} {
     set node_s($i) [$ns node]
@@ -125,17 +181,6 @@ for {set i 0} {$i < $nReceivers} {incr i} {
     puts $tracefd "node_r_$i -> [$node_r($i) id]"
 }
 puts $tracefd "\n"
-
-
-# This section can be used for defining protocol parameters
-
-if {$protocol eq "DCTCP"} {
-  Agent/TCP set dctcp_ true
-}
-
-#Agent/DCCP/TFRC set ccid_ 3
-#Agent/DCCP/TFRC set use_ecn_local_ 0
-#Agent/DCCP/TFRC set use_ecn_remote_ 0
 
 ################################################
 # Background Traffic
@@ -211,7 +256,9 @@ if {$bgTraffic} {
 
 ################################################
 
+#
 # Creating connections for the experiment
+#
 
 for {set i 0} {$i < $nSenders} {incr i} {
     for {set j 0} {$j < $connections} {incr j} {
@@ -246,12 +293,13 @@ for {set i 0} {$i < $nSenders} {incr i} {
         set k [expr $i * $connections + $j]
         set cbr($k) [new Application/Traffic/CBR] 
         $cbr($k) set rate_ 1600Mb
-        $cbr($i) set packetSize_ $pckgSize
         $cbr($k) attach-agent $sourceAgent($k)
     }
 }
 
+#
 # Connections Start and Stop
+#
 
 for {set i 0} {$i < [expr $nSenders * $connections]} {incr i} {
     $ns at 0 "$cbr($i) start"

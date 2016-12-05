@@ -89,11 +89,13 @@ proc getOptionValue {optionName defaultValue} {
     }
 }
 
-proc agentByProtocol {protocol {sink 0}} {
+proc sourceAgentByProtocol {protocol} {
     switch $protocol {
-        "TCP" -
+        "TCP" {
+            return [new Agent/TCP/Newreno]
+        }
         "DCTCP" {
-            if {$sink} {return [new Agent/TCPSink]} else {return [new Agent/TCP]}
+            return [new Agent/TCP/FullTcp/Sack]
         }
         "DCCP" {
             return [new Agent/DCCP/TFRC]
@@ -101,16 +103,35 @@ proc agentByProtocol {protocol {sink 0}} {
     }
 }
 
+proc sinkAgentByProtocol {protocol} {
+    global ns
+    switch $protocol {
+        "TCP" {
+            return [new Agent/TCPSink]
+        }
+        "DCTCP" {
+            set sinkAgent [new Agent/TCP/FullTcp/Sack]
+            $ns at 0 "$sinkAgent listen"
+            return $sinkAgent
+        }
+        "DCCP" {
+            set sinkAgent [new Agent/DCCP/TFRC]
+            $ns at 0 "$sinkAgent listen"
+            return $sinkAgent
+        }
+    }
+}
+
 # Setup of several parameters, such as links bandwidths, numbers of nodes and
 # simulation time.
-set senderBw    [getOptionValue "--sendersBandwidth"  10000Mb]
-set receiverBw  [getOptionValue "--receiverBandWidth"  1000Mb]
-set pckgSize    [getOptionValue "--pckgSize"             1460]
-set bufferSize  [getOptionValue "--bufferSize"            4MB]
-set connections [getOptionValue "--connections"             1]
-set nSenders    [getOptionValue "--senders"                10]
-set nReceivers  [getOptionValue "--receivers"               1]
-set endTime     [getOptionValue "--duration"                1]
+set senderBw    [getOptionValue "--sendersBandwidth"  10Gb]
+set receiverBw  [getOptionValue "--receiverBandWidth"  1Gb]
+set pckgSize    [getOptionValue "--pckgSize"          1460]
+set bufferSize  [getOptionValue "--bufferSize"         4MB]
+set connections [getOptionValue "--connections"          1]
+set nSenders    [getOptionValue "--senders"             10]
+set nReceivers  [getOptionValue "--receivers"            1]
+set endTime     [getOptionValue "--duration"             1]
 set bgTraffic   [isOptionSet    "--bgTraffic"]
 
 # Trace Files Names
@@ -129,12 +150,39 @@ set protocol [string toupper $protocol]
 # This section can be used for defining protocol parameters
 
 if {$protocol eq "DCTCP"} {
-  Agent/TCP set dctcp_ true
+    Agent/TCP set ecn_ 1
+    Agent/TCP set old_ecn_ 1
+    Agent/TCP set dctcp_g_ 0.3;
+    Agent/TCP set minrto_ 0.2 ; # minRTO = 200ms
+    Agent/TCP set dctcp_ true
+    Agent/TCP set tcpTick_ 0.01
+    Agent/TCP set window_ 1256
+    Agent/TCP set windowOption_ 0
+    Agent/TCP set slow_start_restart_ false
+
+    Agent/TCP/FullTcp set segsperack_ 1;
+    Agent/TCP/FullTcp set spa_thresh_ 3000;
+    Agent/TCP/FullTcp set interval_ 0.04 ; #delayed ACK interval = 40ms
+
 }
 
 set pckgSize [toBytes $pckgSize 1024]
 Agent/TCP  set packetSize_ $pckgSize
 Agent/DCCP set packetSize_ $pckgSize
+Agent/TCP/FullTcp set segsize_ $pckgSize
+
+set K 10
+Queue/RED set bytes_ false
+Queue/RED set queue_in_bytes_ true
+Queue/RED set mean_pktsize_ $pckgSize
+Queue/RED set setbit_ true
+Queue/RED set gentle_ false
+Queue/RED set q_weight_ 1.0
+Queue/RED set mark_p_ 1.0
+Queue/RED set thresh_ [expr $K]
+Queue/RED set maxthresh_ [expr $K]
+
+DelayLink set avoidReordering_ true
 
 #Agent/DCCP/TFRC set ccid_ 3
 #Agent/DCCP/TFRC set use_ecn_local_ 0
@@ -164,9 +212,11 @@ for {set i 0} {$i < $nSenders}   {incr i} {
     set node_s($i) [$ns node]
     $ns duplex-link $node_s($i) $e $senderBw 0.025ms DropTail
 }
+
+set switchAlg [expr { $protocol eq "DCTCP" } ? {"RED"} : {"DropTail"}]
 for {set i 0} {$i < $nReceivers} {incr i} {
     set node_r($i) [$ns node]
-    $ns duplex-link $node_r($i) $e $receiverBw 0.025ms DropTail
+    $ns duplex-link $node_r($i) $e $receiverBw 0.025ms $switchAlg
     $ns queue-limit $node_r($i) $e $bufferSize
     $ns queue-limit $e $node_r($i) $bufferSize
 }
@@ -211,7 +261,7 @@ if {$bgTraffic} {
 
   set senderBw   [toBitsPerSecond $senderBw]
   set receiverBw [toBitsPerSecond $receiverBw]
-  set bw [expr $senderBw < $receiverBw ? $senderBw : $receiverBw]
+  set bw [expr { $senderBw < $receiverBw } ? $senderBw : $receiverBw]
   # declaring traffic generator
   set tfg_ftp_rv [new TrafficGen $ns $s_ftp_rv $d_ftp_rv $bw $rho_ftp $tfgTraceFile]
 
@@ -266,7 +316,7 @@ if {$bgTraffic} {
 for {set i 0} {$i < $nSenders} {incr i} {
     for {set j 0} {$j < $connections} {incr j} {
       set k [expr $i * $connections + $j]
-      set sourceAgent($k) [agentByProtocol $protocol]
+      set sourceAgent($k) [sourceAgentByProtocol $protocol]
       $ns attach-agent $node_s($i) $sourceAgent($k)
     }
 }
@@ -274,9 +324,8 @@ for {set i 0} {$i < $nSenders} {incr i} {
 for {set i 0} {$i < $nReceivers} {incr i} {
     for {set j 0} {$j < $connections} {incr j} {
       set k [expr $i * $connections + $j]
-      set sinkAgent($k) [agentByProtocol $protocol 1]
+      set sinkAgent($k) [sinkAgentByProtocol $protocol]
       $ns attach-agent $node_r($i) $sinkAgent($k)
-      $ns at 0 "$sinkAgent($k) listen"
     }
 }
 
@@ -295,7 +344,7 @@ for {set i 0} {$i < $nSenders} {incr i} {
     for {set j 0} {$j < $connections} {incr j} {
         set k [expr $i * $connections + $j]
         set cbr($k) [new Application/Traffic/CBR] 
-        $cbr($k) set rate_ 1600Mb
+        $cbr($k) set rate_ 1.6Gb
         $cbr($k) attach-agent $sourceAgent($k)
     }
 }

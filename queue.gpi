@@ -1,0 +1,19 @@
+reset
+set terminal png
+set output '/dev/null'
+
+# Plot once to store maximum value
+plot dataFile using 1:2 with points
+
+MAX=GPVAL_X_MAX
+
+set xrange [0:MAX+MAX*0.05]
+
+set output outPath
+#set term postscript eps dl 1.7 "Helvetica" 17
+set encoding iso_8859_1
+set xlabel 'Time (seconds)'
+set ylabel 'Queue (Bytes)'
+set style data linespoints
+
+plot dataFile using 1:2 title '' with points

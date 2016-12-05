@@ -28,55 +28,62 @@ do
   do
     for n in "${nSenders[@]}"
     do
-      # For every scenario, run a simulation and create a trace file
+      # For every scenario, run a simulation and create trace files
       echo "Taking $nSamples sample(s) for protocol $protocol with $n senders during a $duration interval"
-      i=0
+      i=-1
       outDir=out/$protocol/$duration/${n}Senders
-      while [ $((i+=1)) -le $nSamples ]
+      while [ $((i+=1)) -lt $nSamples ]
       do
-        echo "Taking sample $i"
-        ${nsPath} script-protocols-background.tcl --duration $duration --protocol $protocol --senders $n --outDir $outDir --traceFileName trace$i.tr
+        traceFileName=trace.$i.tr
+        throughputFileName=throughput.$i.tr
+        queueFileName=queue.$i.%.tr
+        echo "Taking sample $((i+1))"
+        ${nsPath} script-protocols-background.tcl --duration $duration --protocol $protocol --senders $n --outDir $outDir --traceFileName $traceFileName --throughputFileName $throughputFileName --queueFileName $queueFileName
+        for dataFile in $outDir/queue.$i.*.tr
+        do
+          gnuplot -e "dataFile='$dataFile'; outPath='${dataFile%.*}.png';" queue.gpi
+        done
       done
     done
-    # Extract throughput from those traces
-    echo "Computing senders/throughput for protocol $protocol during a $duration interval"
-    csvFile=out/$protocol/$duration/throughput.csv
-    imgFile=out/$protocol/$duration/throughput.png
-    touch $csvFile
-    truncate -s 0 $csvFile
+    # Assemble all throughputs on a single data file
+    echo "Creating throughput data file for protocol $protocol during a $duration interval"
+    dataFile=out/$protocol/$duration/throughput.tr
+    touch $dataFile
+    truncate -s 0 $dataFile
     for n in "${nSenders[@]}"
     do
-      echo -n "${n} " >> $csvFile
+      echo -n "${n} " >> $dataFile
       traceDir=out/$protocol/$duration/${n}Senders
       if [ $nSamples -gt 1 ]
       then
-        i=0
+        i=-1
         samples=()
         sampleSum=0
-        while [ $((i+=1)) -le $nSamples ]
+        while [ $((i+=1)) -lt $nSamples ]
         do
-          sample=$(awk -f throughput.awk $traceDir/trace$i.tr)
+          throughputFileName=throughput.$i.tr
+          sample=$(cat $traceDir/$throughputFileName)
           samples+=($sample)
           sampleSum=$(bc -l <<< "$sampleSum+$sample")
-          echo -n "$sample " >> $csvFile
+          echo -n "$sample " >> $dataFile
         done
         # Compute and print mean and 95% confidence interval for this row
         mean=$(bc -l <<< "$sampleSum/$nSamples")
         std_dev=$(sd $samples $mean)
         error=$(bc -l <<< "1.96*$std_dev/sqrt($nSamples)")
-        echo -n $mean" " >> $csvFile
-        echo    $error   >> $csvFile
+        echo -n $mean" " >> $dataFile
+        echo    $error   >> $dataFile
       else
         # Print the only single value for this row
-        echo $(awk -f throughput.awk $traceDir/trace1.tr) >> $csvFile
+        echo $(cat $traceDir/$throughputFileName) >> $dataFile
       fi
     done
     # Plot Graphics
     if [ $nSamples -gt 1 ]
     then
-      gnuplot -e "dataFile='$csvFile'; outPath='$imgFile'; yColumn=$(($nSamples+2)); errorColumn=$(($nSamples+3))" throughput.gpi
+      gnuplot -e "dataFile='$dataFile'; outPath='${dataFile%.*}.png'; yColumn=$(($nSamples+2)); errorColumn=$(($nSamples+3))" throughput.gpi
     else
-      gnuplot -e "dataFile='$csvFile'; outPath='$imgFile';" throughput.gpi
+      gnuplot -e "dataFile='$dataFile'; outPath='${dataFile%.*}.png';" throughput.gpi
     fi
   done
 done

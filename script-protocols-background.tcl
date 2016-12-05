@@ -135,10 +135,12 @@ set endTime     [getOptionValue "--duration"             1]
 set bgTraffic   [isOptionSet    "--bgTraffic"]
 
 # Trace Files Names
-set traceFile [getOptionValue "--traceFileName" trace.tr]
-set tfgTraceFile [getOptionValue "--tfgTraceFileName" ""]
+set traceFile      [getOptionValue "--traceFileName" trace.tr]
+set queueFile      [getOptionValue "--queueFileName" queue%.tr]
+set throughputFile [getOptionValue "--throughputFileName" throughput.tr]
+set tfgTraceFile   [getOptionValue "--tfgTraceFileName" ""]
 
-# Diretory in which trace.tr will be written
+# Diretory in which traces will be written
 set param(dir) [getOptionValue "--outDir" "."]
 # Makes sure output directory exists
 file mkdir $param(dir)
@@ -191,8 +193,12 @@ DelayLink set avoidReordering_ true
 #
 # Initialize Global Variables
 #
-set ns		[new Simulator]
-set tracefd     [open $param(dir)/$traceFile w]
+set ns		 [new Simulator]
+set tracefd      [open $param(dir)/$traceFile w]
+set throughputfd [open $param(dir)/$throughputFile w]
+for {set i 0} {$i < $nReceivers} {incr i} {
+    set queuefd($i) [open $param(dir)/[string map "% $i" $queueFile] w]
+}
 $ns trace-all $tracefd
 
 # ns scheduler only supports time in seconds
@@ -213,12 +219,15 @@ for {set i 0} {$i < $nSenders}   {incr i} {
     $ns duplex-link $node_s($i) $e $senderBw 0.025ms DropTail
 }
 
+set interval [expr double($endTime)/10]
 set switchAlg [expr { $protocol eq "DCTCP" } ? {"RED"} : {"DropTail"}]
 for {set i 0} {$i < $nReceivers} {incr i} {
     set node_r($i) [$ns node]
     $ns duplex-link $node_r($i) $e $receiverBw 0.025ms $switchAlg
     $ns queue-limit $node_r($i) $e $bufferSize
     $ns queue-limit $e $node_r($i) $bufferSize
+    set qmon($i) [$ns monitor-queue $e $node_r($i) [open /dev/null w] $interval]
+    [$ns link $e $node_r($i)] queue-sample-timeout
 }
 
 # Prints node ids on trace file to help AWK scripts process it
@@ -365,15 +374,40 @@ for {set i 0} {$i < $nReceivers} {incr i} {
     $ns at $endTime "$node_r($i) reset"
 }
 
+$ns at 0 "traceQueues"
+$ns at $endTime "traceThroughput"
+
 $ns at $endTime "$e reset"
 $ns at $endTime "stop" 
 
+proc traceQueues {} {
+  global ns qmon queuefd nReceivers interval
+  set now [$ns now]
+  for {set i 0} {$i < $nReceivers} {incr i} {
+    $qmon($i) instvar size_
+    puts $queuefd($i) "$now $size_"
+  }
+  $ns at [expr $now+$interval] "traceQueues"
+}
+
+proc traceThroughput {} {
+    global qmon throughputfd nReceivers bdeparturesStart endTime
+    set relayedAmount 0
+    for {set i 0} {$i < $nReceivers} {incr i} {
+       $qmon($i) instvar bdepartures_
+       set relayedAmount [expr $relayedAmount + $bdepartures_]
+    }
+    puts $throughputfd [expr (double($relayedAmount)*8)/(double($endTime)*1000000)]
+}
+
 proc stop {} {
-    global ns tracefd
-    global endTime
-    puts $tracefd "x [toSeconds $endTime] End of simulation"
+    global ns tracefd throughputfd queuefd nReceivers
     $ns flush-trace
     close $tracefd
+    close $throughputfd
+    for {set i 0} {$i < $nReceivers} {incr i} {
+        close $queuefd($i)
+    }
     exit 0
 }
 

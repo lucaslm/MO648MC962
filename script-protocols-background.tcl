@@ -230,17 +230,6 @@ for {set i 0} {$i < $nReceivers} {incr i} {
     [$ns link $e $node_r($i)] queue-sample-timeout
 }
 
-# Prints node ids on trace file to help AWK scripts process it
-puts $tracefd "NODES IDS"
-puts $tracefd "e -> [$e id]"
-for {set i 0} {$i < $nSenders}   {incr i} {
-    puts $tracefd "node_s_$i -> [$node_s($i) id]"
-}
-for {set i 0} {$i < $nReceivers} {incr i} {
-    puts $tracefd "node_r_$i -> [$node_r($i) id]"
-}
-puts $tracefd "\n"
-
 ################################################
 # Background Traffic
 

@@ -131,13 +131,14 @@ set bufferSize  [getOptionValue "--bufferSize"         4MB]
 set connections [getOptionValue "--connections"          1]
 set nSenders    [getOptionValue "--senders"             10]
 set nReceivers  [getOptionValue "--receivers"            1]
-set endTime     [getOptionValue "--duration"             1]
+set endTime     [getOptionValue "--duration"           150]
+set traceTime   [getOptionValue "--traceDuration"        1]
 set bgTraffic   [isOptionSet    "--bgTraffic"]
 
 # Trace Files Names
 set traceFile      [getOptionValue "--traceFileName" trace.tr]
-set queueFile      [getOptionValue "--queueFileName" queue%.tr]
-set throughputFile [getOptionValue "--throughputFileName" throughput.tr]
+set queueFile      [getOptionValue "--queueFileName" queue.%.tr]
+set throughputFile [getOptionValue "--throughputFileName" queue.%.throughput.tr]
 set tfgTraceFile   [getOptionValue "--tfgTraceFileName" ""]
 
 # Diretory in which traces will be written
@@ -158,7 +159,6 @@ if {$protocol eq "DCTCP"} {
     Agent/TCP set minrto_ 0.2 ; # minRTO = 200ms
     Agent/TCP set dctcp_ true
     Agent/TCP set tcpTick_ 0.01
-    Agent/TCP set window_ 1256
     Agent/TCP set windowOption_ 0
     Agent/TCP set slow_start_restart_ false
 
@@ -167,6 +167,11 @@ if {$protocol eq "DCTCP"} {
     Agent/TCP/FullTcp set interval_ 0.04 ; #delayed ACK interval = 40ms
 
 }
+
+# Window size should have no max bound
+# puts "biggest int is [expr {[regsub F [format "0x%X" -1] 7]}]"
+Agent/TCP set window_ [expr pow(2,28)-1]
+Agent/TCP set ssthresh_ 10
 
 set pckgSize [toBytes $pckgSize 1024]
 Agent/TCP  set packetSize_ $pckgSize
@@ -186,23 +191,20 @@ Queue/RED set maxthresh_ [expr $K]
 
 DelayLink set avoidReordering_ true
 
-#Agent/DCCP/TFRC set ccid_ 3
-#Agent/DCCP/TFRC set use_ecn_local_ 0
-#Agent/DCCP/TFRC set use_ecn_remote_ 0
+Agent/DCCP/TFRC set ccid_ 3
+Agent/DCCP/TFRC set use_ecn_local_ 0
+Agent/DCCP/TFRC set use_ecn_remote_ 0
 
 #
 # Initialize Global Variables
 #
 set ns		 [new Simulator]
 set tracefd      [open $param(dir)/$traceFile w]
-set throughputfd [open $param(dir)/$throughputFile w]
-for {set i 0} {$i < $nReceivers} {incr i} {
-    set queuefd($i) [open $param(dir)/[string map "% $i" $queueFile] w]
-}
 $ns trace-all $tracefd
 
 # ns scheduler only supports time in seconds
 set endTime [toSeconds $endTime]
+set traceTime [toSeconds $traceTime]
 
 #
 # Node declarations
@@ -214,21 +216,43 @@ set e [$ns node]
 set bufferSize [toBytes $bufferSize 1024]
 set bufferSize [expr int($bufferSize/$pckgSize)]
 
+set interval [expr double($traceTime)/10]
+
 for {set i 0} {$i < $nSenders}   {incr i} {
     set node_s($i) [$ns node]
-    $ns duplex-link $node_s($i) $e $senderBw 0.025ms DropTail
+    $ns duplex-link $node_s($i) $e $senderBw 0.025m DropTail
+    set id "[$e id]-[$node_s($i) id]"
+    set throughputfd($id) [open $param(dir)/[string map "% $id" $throughputFile] w]
+    set queuefd($id)      [open $param(dir)/[string map "% $id" $queueFile] w]
+    set qmon($id)         [$ns monitor-queue $e $node_s($i) [open /dev/null w] $interval]
+    puts $queuefd($id) "# Queue limit is [Queue set limit_] packages or [expr [Queue set limit_]*$pckgSize] bytes"
+
 }
 
-set interval [expr double($endTime)/10]
 set switchAlg [expr { $protocol eq "DCTCP" } ? {"RED"} : {"DropTail"}]
 for {set i 0} {$i < $nReceivers} {incr i} {
     set node_r($i) [$ns node]
-    $ns duplex-link $node_r($i) $e $receiverBw 0.025ms $switchAlg
+    $ns duplex-link $node_r($i) $e $receiverBw 0.025m $switchAlg
     $ns queue-limit $node_r($i) $e $bufferSize
     $ns queue-limit $e $node_r($i) $bufferSize
-    set qmon($i) [$ns monitor-queue $e $node_r($i) [open /dev/null w] $interval]
-    [$ns link $e $node_r($i)] queue-sample-timeout
+    set id "[$e id]-[$node_r($i) id]"
+    set throughputfd($id) [open $param(dir)/[string map "% $id" $throughputFile] w]
+    set queuefd($id)      [open $param(dir)/[string map "% $id" $queueFile] w]
+    set qmon($id)         [$ns monitor-queue $e $node_r($i) [open /dev/null w] $interval]
+    #[$ns link $e $node_r($i)] queue-sample-timeout
+    puts $queuefd($id) "# Queue limit is $bufferSize packages or [expr $bufferSize*$pckgSize] bytes"
 }
+
+# Prints node ids on trace file
+puts $tracefd "NODES IDS"
+puts $tracefd "e -> [$e id]"
+for {set i 0} {$i < $nSenders}   {incr i} {
+    puts $tracefd "node_s_$i -> [$node_s($i) id]"
+}
+for {set i 0} {$i < $nReceivers} {incr i} {
+    puts $tracefd "node_r_$i -> [$node_r($i) id]"
+}
+puts $tracefd "\n"
 
 ################################################
 # Background Traffic
@@ -363,39 +387,54 @@ for {set i 0} {$i < $nReceivers} {incr i} {
     $ns at $endTime "$node_r($i) reset"
 }
 
-$ns at 0 "traceQueues"
-$ns at $endTime "traceThroughput"
+array set relayedAmount {}
+set startMeasurementTime [expr $endTime - $traceTime]
+
+$ns at $startMeasurementTime "traceQueues"
+$ns at $startMeasurementTime "traceThroughputStart"
+$ns at $endTime "traceThroughputFinish"
 
 $ns at $endTime "$e reset"
 $ns at $endTime "stop" 
 
 proc traceQueues {} {
-  global ns qmon queuefd nReceivers interval
+  global ns qmon queuefd interval startMeasurementTime sourceAgent
   set now [$ns now]
-  for {set i 0} {$i < $nReceivers} {incr i} {
-    $qmon($i) instvar size_
-    puts $queuefd($i) "$now $size_"
+  foreach {id mon} [array get qmon] {
+    $mon instvar size_
+    $mon instvar pkts_
+    puts $queuefd($id) "[expr $now - $startMeasurementTime] $size_ $pkts_"
   }
   $ns at [expr $now+$interval] "traceQueues"
 }
 
-proc traceThroughput {} {
-    global qmon throughputfd nReceivers bdeparturesStart endTime
-    set relayedAmount 0
-    for {set i 0} {$i < $nReceivers} {incr i} {
-       $qmon($i) instvar bdepartures_
-       set relayedAmount [expr $relayedAmount + $bdepartures_]
+proc traceThroughputStart {} {
+    global qmon relayedAmount 
+    foreach {id mon} [array get qmon] {
+       $mon instvar bdepartures_
+       set relayedAmount($id) $bdepartures_
     }
-    puts $throughputfd [expr (double($relayedAmount)*8)/(double($endTime)*1000000)]
+
+}
+
+proc traceThroughputFinish {} {
+    global qmon throughputfd relayedAmount traceTime
+    foreach {id mon} [array get qmon] {
+       $mon instvar bdepartures_
+       set relayedAmount($id) [expr $bdepartures_ - $relayedAmount($id)]
+       puts $throughputfd($id) [expr (double($relayedAmount($id))*8)/(double($traceTime)*1000000)]
+    }
 }
 
 proc stop {} {
-    global ns tracefd throughputfd queuefd nReceivers
+    global ns tracefd throughputfd queuefd
     $ns flush-trace
     close $tracefd
-    close $throughputfd
-    for {set i 0} {$i < $nReceivers} {incr i} {
-        close $queuefd($i)
+    foreach {id file} [array get queuefd] {
+        close $file
+    }
+    foreach {id file} [array get throughputfd] {
+        close $file
     }
     exit 0
 }

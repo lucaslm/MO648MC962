@@ -31,29 +31,34 @@ do
       # For every scenario, run a simulation and create trace files
       echo "Taking $nSamples sample(s) for protocol $protocol with $n senders during a $duration interval"
       i=-1
-      outDir=out/$protocol/$duration/${n}Senders
       while [ $((i+=1)) -lt $nSamples ]
       do
-        traceFileName=trace.$i.tr
-        throughputFileName=throughput.$i.tr
-        queueFileName=queue.$i.%.tr
-        echo "Taking sample $((i+1))"
-        ${nsPath} script-protocols-background.tcl --duration $duration --protocol $protocol --senders $n --outDir $outDir --traceFileName $traceFileName --throughputFileName $throughputFileName --queueFileName $queueFileName
-        for dataFile in $outDir/queue.$i.*.tr
+
+        if [ $nSamples -gt 1 ]
+        then
+          echo "Taking sample $((i+1))"
+          outDir="out/$protocol/$duration/${n}Senders/sample$((i+1))"
+        else
+          outDir="out/$protocol/$duration/${n}Senders"
+        fi
+
+        ${nsPath} script-protocols-background.tcl --traceDuration $duration --protocol $protocol --senders $n --outDir $outDir
+        for dataFile in `find $outDir -regex '.*queue\.[0-9]+\-[0-9]+\.tr$'`
         do
           gnuplot -e "dataFile='$dataFile'; outPath='${dataFile%.*}.png';" queue.gpi
         done
       done
     done
     # Assemble all throughputs on a single data file
-    echo "Creating throughput data file for protocol $protocol during a $duration interval"
-    dataFile=out/$protocol/$duration/throughput.tr
+    echo "Creating receiver throughput data file for protocol $protocol during a $duration interval"
+    dataFile=out/$protocol/$duration/throughput-receiver.dat
     touch $dataFile
     truncate -s 0 $dataFile
     for n in "${nSenders[@]}"
     do
       echo -n "${n} " >> $dataFile
-      traceDir=out/$protocol/$duration/${n}Senders
+      queue="0-$((n+1))"
+      traceFileName=queue.${queue}.throughput.tr
       if [ $nSamples -gt 1 ]
       then
         i=-1
@@ -61,8 +66,8 @@ do
         sampleSum=0
         while [ $((i+=1)) -lt $nSamples ]
         do
-          throughputFileName=throughput.$i.tr
-          sample=$(cat $traceDir/$throughputFileName)
+          traceDir="out/$protocol/$duration/${n}Senders/sample$((i+1))"
+          sample=$(cat $traceDir/$traceFileName)
           samples+=($sample)
           sampleSum=$(bc -l <<< "$sampleSum+$sample")
           echo -n "$sample " >> $dataFile
@@ -75,7 +80,8 @@ do
         echo    $error   >> $dataFile
       else
         # Print the only single value for this row
-        echo $(cat $traceDir/$throughputFileName) >> $dataFile
+        traceDir="out/$protocol/$duration/${n}Senders"
+        echo $(cat $traceDir/$traceFileName) >> $dataFile
       fi
     done
     # Plot Graphics

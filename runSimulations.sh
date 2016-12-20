@@ -24,34 +24,34 @@ nSamples=$(if [ $# -gt 0 ]; then echo $1; else echo 5; fi)
 
 for protocol in "${protocols[@]}"
 do
-  for duration in "${durations[@]}"
+  for n in "${nSenders[@]}"
   do
-    for n in "${nSenders[@]}"
+    # For every scenario, run a simulation and create trace files
+    echo "Taking $nSamples sample(s) for protocol $protocol with $n senders"
+    i=-1
+    while [ $((i+=1)) -lt $nSamples ]
     do
-      # For every scenario, run a simulation and create trace files
-      echo "Taking $nSamples sample(s) for protocol $protocol with $n senders during a $duration interval"
-      i=-1
-      while [ $((i+=1)) -lt $nSamples ]
+
+      if [ $nSamples -gt 1 ]
+      then
+        echo "Taking sample $((i+1))"
+        outDir="out/$protocol/${n}Senders/sample$((i+1))"
+      else
+        outDir="out/$protocol/${n}Senders"
+      fi
+
+      ${nsPath} script-protocols-background.tcl --traceIntervals ${durations[*]} --protocol $protocol --senders $n --outDir $outDir
+      for dataFile in `find $outDir -regex '.*queue\.[0-9]+\-[0-9]+\.tr$'`
       do
-
-        if [ $nSamples -gt 1 ]
-        then
-          echo "Taking sample $((i+1))"
-          outDir="out/$protocol/$duration/${n}Senders/sample$((i+1))"
-        else
-          outDir="out/$protocol/$duration/${n}Senders"
-        fi
-
-        ${nsPath} script-protocols-background.tcl --traceDuration $duration --protocol $protocol --senders $n --outDir $outDir
-        for dataFile in `find $outDir -regex '.*queue\.[0-9]+\-[0-9]+\.tr$'`
-        do
-          gnuplot -e "dataFile='$dataFile'; outPath='${dataFile%.*}.png';" queue.gpi
-        done
+        gnuplot -e "dataFile='$dataFile'; outPath='${dataFile%.*}.png';" queue.gpi
       done
     done
+  done
+  for duration in "${durations[@]}"
+  do
     # Assemble all throughputs on a single data file
-    echo "Creating receiver throughput data file for protocol $protocol during a $duration interval"
-    dataFile=out/$protocol/$duration/throughput-receiver.dat
+    echo "Creating receiver throughput data file for protocol $protocol"
+    dataFile=out/$protocol/throughput-receiver-${duration}.dat
     touch $dataFile
     truncate -s 0 $dataFile
     for n in "${nSenders[@]}"
@@ -66,7 +66,7 @@ do
         sampleSum=0
         while [ $((i+=1)) -lt $nSamples ]
         do
-          traceDir="out/$protocol/$duration/${n}Senders/sample$((i+1))"
+          traceDir="out/$protocol/${n}Senders/sample$((i+1))/$duration"
           sample=$(cat $traceDir/$traceFileName)
           samples+=($sample)
           sampleSum=$(bc -l <<< "$sampleSum+$sample")
@@ -80,7 +80,7 @@ do
         echo    $error   >> $dataFile
       else
         # Print the only single value for this row
-        traceDir="out/$protocol/$duration/${n}Senders"
+        traceDir="out/$protocol/${n}Senders/$duration"
         echo $(cat $traceDir/$traceFileName) >> $dataFile
       fi
     done
